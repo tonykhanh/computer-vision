@@ -1,4 +1,4 @@
 streamlit
 numpy
 opencv-python-headless
-ai-edge-litert
+ultralytics
