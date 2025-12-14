@@ -1,42 +1,70 @@
 import cv2
 import numpy as np
-from tensorflow import keras
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 import config
 
-# Fix for "Unrecognized keyword arguments passed to DepthwiseConv2D: {'groups': 1}"
-# caused by loading a model saved with a different Keras version.
-class FixedDepthwiseConv2D(keras.layers.DepthwiseConv2D):
-    def __init__(self, **kwargs):
-        kwargs.pop('groups', None)
-        super().__init__(**kwargs)
+try:
+    # Try using lightweight tflite_runtime (for deployment)
+    import tflite_runtime.interpreter as tflite
+except ImportError:
+    # Fallback to full tensorflow (for local development)
+    try:
+        import tensorflow.lite as tflite
+    except ImportError:
+        print("Error: Neither tflite_runtime nor tensorflow is installed.")
+        tflite = None
 
 class ObjectDetector:
-    def __init__(self, model_path=config.MODEL_PATH):
-        """Initialize the model."""
-        try:
-            # Use custom object to handle the version mismatch of DepthwiseConv2D
-            self.model = keras.models.load_model(model_path, custom_objects={'DepthwiseConv2D': FixedDepthwiseConv2D})
-            print(f"Model loaded successfully from {model_path}")
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            self.model = None # Ensure self.model exists even on error
-            # raise e # Don't raise, just log, so app can start (soft fail) - actually original code raised.
-            # But for Vercel demo, if it fails, maybe we want to know. 
-            # User said "Lỗi model not loaded". I should probably fix it.
-            # If I fail to fix it, I should verify.
-            # Let's re-raise to be safe if it still fails, so we see the error.
-            raise e
+    def __init__(self, model_path="mobilenet/model.tflite"):
+        """Initialize the TFLite model."""
+        self.interpreter = None
+        if tflite:
+            try:
+                self.interpreter = tflite.Interpreter(model_path=model_path)
+                self.interpreter.allocate_tensors()
+                
+                self.input_details = self.interpreter.get_input_details()
+                self.output_details = self.interpreter.get_output_details()
+                
+                print(f"TFLite Model loaded successfully from {model_path}")
+            except Exception as e:
+                print(f"Error loading TFLite model: {e}")
+                # Don't raise, allowing app to start with "Model Not Loaded" warning
+        
+    def preprocess_input(self, x):
+        """
+        Manual implementation of MobileNetV2 preprocess_input.
+        Scales values from [0, 255] to [-1, 1].
+        """
+        x = x.astype(np.float32)
+        x /= 127.5
+        x -= 1.
+        return x
 
     def preprocess_frame(self, frame):
         """Resize and preprocess frame for the model."""
+        # Resize to (128, 128)
         frame_resized = cv2.resize(frame, config.INPUT_SHAPE)
-        frame_preprocessed = preprocess_input(frame_resized)
+        
+        # Expand dims to (1, 128, 128, 3)
+        frame_batch = np.expand_dims(frame_resized, axis=0)
+        
+        # Preprocess
+        frame_preprocessed = self.preprocess_input(frame_batch)
         return frame_preprocessed
 
     def predict(self, frame_preprocessed):
-        """Run prediction on a preprocessed frame."""
-        predictions = self.model.predict(np.array([frame_preprocessed]))
+        """Run prediction using TFLite interpreter."""
+        if not self.interpreter:
+            return np.zeros((1, len(config.CATEGORIES)))
+
+        # Set input tensor
+        self.interpreter.set_tensor(self.input_details[0]['index'], frame_preprocessed)
+        
+        # Run inference
+        self.interpreter.invoke()
+        
+        # Get output tensor
+        predictions = self.interpreter.get_tensor(self.output_details[0]['index'])
         return predictions
 
     def process_frame(self, frame):
@@ -44,12 +72,21 @@ class ObjectDetector:
         Takes a raw frame, runs prediction, and draws overlays.
         Returns the processed frame.
         """
+        if not self.interpreter:
+             cv2.putText(frame, "Model Not Loaded", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+             return frame
+
         # 1. Prediction logic
         frame_preprocessed = self.preprocess_frame(frame)
         predictions = self.predict(frame_preprocessed)
         
         pred_index = np.argmax(predictions)
-        pred_name = config.CATEGORIES[pred_index]
+        # Check boundary
+        if pred_index < len(config.CATEGORIES):
+            pred_name = config.CATEGORIES[pred_index]
+        else:
+            pred_name = "Unknown"
+            
         pred_prob = round(predictions[0][pred_index] * 100, 2)
 
         # 2. Image Processing (Contours)
@@ -71,16 +108,7 @@ class ObjectDetector:
             x, y, w, h = cv2.boundingRect(max_contour)
             xmin, ymin, xmax, ymax = x, y, x + w, y + h
             
-            # Choose color based on detection
-            if pred_name in config.CATEGORIES:
-                # Logic from original: Red if detected?, Original had weird logic
-                # Original: if pred_name in categories: color = RED else GREEN
-                # Actually original was: if pred_name in categories: RED else GREEN. 
-                # Wait, categories list contains ALL potential classes. So it's always RED?
-                # Let's keep original behavior:
-                box_color = config.COLOR_RED
-            else:
-                box_color = config.COLOR_GREEN
+            box_color = config.COLOR_RED # Default color
                 
             cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), box_color, thickness=2)
 
@@ -91,6 +119,7 @@ class ObjectDetector:
             # Draw Top 3
             top3_indices = np.argsort(predictions[0])[::-1][:3]
             for i, idx in enumerate(top3_indices):
+                if idx >= len(config.CATEGORIES): continue
                 if config.CATEGORIES[idx] == pred_name:
                     continue
                 # Offset usually starts below
