@@ -4,14 +4,28 @@ from tensorflow import keras
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 import config
 
+# Fix for "Unrecognized keyword arguments passed to DepthwiseConv2D: {'groups': 1}"
+# caused by loading a model saved with a different Keras version.
+class FixedDepthwiseConv2D(keras.layers.DepthwiseConv2D):
+    def __init__(self, **kwargs):
+        kwargs.pop('groups', None)
+        super().__init__(**kwargs)
+
 class ObjectDetector:
     def __init__(self, model_path=config.MODEL_PATH):
         """Initialize the model."""
         try:
-            self.model = keras.models.load_model(model_path)
+            # Use custom object to handle the version mismatch of DepthwiseConv2D
+            self.model = keras.models.load_model(model_path, custom_objects={'DepthwiseConv2D': FixedDepthwiseConv2D})
             print(f"Model loaded successfully from {model_path}")
         except Exception as e:
             print(f"Error loading model: {e}")
+            self.model = None # Ensure self.model exists even on error
+            # raise e # Don't raise, just log, so app can start (soft fail) - actually original code raised.
+            # But for Vercel demo, if it fails, maybe we want to know. 
+            # User said "Lỗi model not loaded". I should probably fix it.
+            # If I fail to fix it, I should verify.
+            # Let's re-raise to be safe if it still fails, so we see the error.
             raise e
 
     def preprocess_frame(self, frame):
