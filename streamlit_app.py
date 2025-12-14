@@ -92,9 +92,13 @@ def load_detector():
 
 detector = load_detector()
 
-if not detector:
-    st.error("Failed to load model. Check logs.")
-    st.stop()
+if not detector or detector.model is None:
+    st.error("Model Failed to Load.")
+    if detector and detector.error_msg:
+         st.error(f"Detailed Error: {detector.error_msg}")
+    st.warning("Please check the logs or ensure the model file can be downloaded.")
+    # Do not stop completely, let the UI render so they can see the error
+
 
 # Camera Input
 st.markdown("### 📸 Capture Image")
