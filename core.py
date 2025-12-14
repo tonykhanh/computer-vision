@@ -3,8 +3,15 @@ import numpy as np
 import config
 
 try:
-    # Try using lightweight tflite_runtime (for deployment)
-    import tflite_runtime.interpreter as tflite
+    # Try using lightweight ai-edge-litert (successor to tflite-runtime, supports Python 3.12)
+    try:
+        from ai_edge_litert.interpreter import Interpreter
+        # Shim to match tflite_runtime interface if needed
+        class tflite:
+            Interpreter = Interpreter
+    except ImportError:
+        # Try legacy tflite_runtime
+        import tflite_runtime.interpreter as tflite
 except ImportError:
     # Fallback to full tensorflow (for local development)
     try:
