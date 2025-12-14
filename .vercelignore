@@ -1,0 +1,7 @@
+# Exclude large unused files from Vercel build
+**/*.pkl
+**/*.h5
+**/*.md
+convert_model.py
+.github
+tests/

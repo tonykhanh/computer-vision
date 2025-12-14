@@ -1,9 +1,4 @@
 {
-    "functions": {
-        "api/**/*.py": {
-            "excludeFiles": "{**/*.h5,**/*.pkl,convert_model.py,README.md,Pipfile*,runtime.txt,.github/**}"
-        }
-    },
     "rewrites": [
         {
             "source": "/(.*)",
