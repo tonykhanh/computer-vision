@@ -86,18 +86,19 @@ with col2:
     st.markdown("<div style='text-align: center; color: #aaa; margin-bottom: 30px;'>Powered by Ultralytics YOLO-World & Streamlit</div>", unsafe_allow_html=True)
 
 # Initialize Detector
-@st.cache_resource
+@st.cache_resource(ttl="2h")
 def load_detector():
     return ObjectDetector(model_path="yolov8s-world.pt")
 
 detector = load_detector()
 
-if not detector or detector.model is None:
+if not detector or getattr(detector, 'model', None) is None:
     st.error("Model Failed to Load.")
-    if detector and detector.error_msg:
-         st.error(f"Detailed Error: {detector.error_msg}")
+    # Safe access to error message
+    err = getattr(detector, 'error_msg', 'Unknown Error (Check Logs)')
+    st.error(f"Detailed Error: {err}")
     st.warning("Please check the logs or ensure the model file can be downloaded.")
-    # Do not stop completely, let the UI render so they can see the error
+
 
 
 # Camera Input
