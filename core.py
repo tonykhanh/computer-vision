@@ -14,7 +14,7 @@ except ImportError:
         tflite = None
 
 class ObjectDetector:
-    def __init__(self, model_path="mobilenet/model.tflite"):
+    def __init__(self, model_path=config.MODEL_PATH):
         """Initialize the TFLite model."""
         self.interpreter = None
         if tflite:

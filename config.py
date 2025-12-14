@@ -1,7 +1,8 @@
 import os
 
 # Model Configuration
-MODEL_PATH = "mobilenet/mobilenet.h5"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "mobilenet", "model.tflite")
 INPUT_SHAPE = (128, 128)
 
 # Categories
